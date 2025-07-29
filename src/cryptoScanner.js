@@ -2,7 +2,7 @@ const { sendAlert } = require('./alerts');
 const { RSI } = require('technicalindicators');
 const axios = require('axios');
 const { detectBreakout } = require('./rules');
-
+const { logTrade } = require('./logger');
 
 const coins = [
   { id: 'bitcoin', symbol: 'BTC' },
@@ -26,10 +26,12 @@ async function scanCrypto() {
 
       if (latestRSI < 30) {
         await sendAlert(`🪙 ${coin.symbol} RSI = ${latestRSI.toFixed(2)} — Oversold!`);
+				logTrade({ symbol: coin.symbol, type: 'RSI', price: prices.at(-1), reason: tradeSignal });
       }
 			const breakoutSignal = detectBreakout(coin.symbol, prices, 2);
 			if (breakoutSignal) {
 				await sendAlert(breakoutSignal);
+				logTrade({ symbol: coin.symbol, type: 'Breakout', price: prices.at(-1), reason: breakoutSignal });
 			}
     } catch (err) {
       console.error(`Error scanning ${coin.symbol}:`, err.message);
