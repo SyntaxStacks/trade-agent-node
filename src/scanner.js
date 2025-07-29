@@ -1,6 +1,6 @@
 const { sendAlert } = require('./alerts');
 const { evaluateTradeRules, detectBreakout } = require('./rules');
-const { logTrade } = require('./logger');
+const { logTradeToSupabase } = require('./supabaseLogger');
 
 const axios = require('axios');
 require('dotenv').config();
@@ -29,12 +29,24 @@ async function scanMarket() {
       const tradeSignal = evaluateTradeRules(symbol, prices);
       if (tradeSignal) {
         await sendAlert(tradeSignal);
-				logTrade({ symbol, type: 'RSI', price: prices.at(-1), reason: tradeSignal });
+				logTradeToSupabase({
+					symbol,
+					type: 'RSI',
+					price: prices.at(-1),
+					reason: tradeSignal,
+					status: 'OPEN',
+				});
       }
 			const breakoutSignal = detectBreakout(symbol, prices, 2);
 			if (breakoutSignal) {
 				await sendAlert(breakoutSignal);
-				logTrade({ symbol, type: 'Breakout', price: prices.at(-1), reason: breakoutSignal });
+				logTradeToSupabase({
+					symbol,
+					type: 'Breakout',
+					price: prices.at(-1),
+					reason: breakoutSignal,
+					status: 'OPEN',
+				 });
 			}
     } catch (err) {
       console.error(`Error scanning ${symbol}:`, err.message);
