@@ -1,8 +1,29 @@
-function evaluateTradeRules(symbol, data) {
-  // Placeholder logic: alert if price exists (you can build real rules here)
-  const pricePoint = Object.values(data['Time Series (5min)'])[0];
-  const currentPrice = pricePoint['4. close'];
-  return `${symbol} current price is $${currentPrice}. Consider buying if RSI < 30 (check manually).`;
+const { RSI } = require('technicalindicators');
+
+function evaluateTradeRules(symbol, prices) {
+  const rsiValues = RSI.calculate({ values: prices, period: 14 });
+  const latestRSI = rsiValues[rsiValues.length - 1];
+
+  if (latestRSI < 30) {
+    return `📉 ${symbol} RSI = ${latestRSI.toFixed(2)} — Oversold! Consider watching for bounce.`;
+  }
+
+  return null;
 }
 
-module.exports = { evaluateTradeRules };
+function detectBreakout(symbol, prices, thresholdPercent = 2) {
+  const recentHigh = Math.max(...prices.slice(0, -1));  // exclude latest candle
+  const latestPrice = prices[prices.length - 1];
+
+  const breakout = latestPrice > recentHigh * (1 + thresholdPercent / 100);
+  if (breakout) {
+    return `🚀 ${symbol} breakout! Price $${latestPrice.toFixed(2)} > previous high $${recentHigh.toFixed(2)} (+${thresholdPercent}%)`;
+  }
+
+  return null;
+}
+
+module.exports = {
+	evaluateTradeRules,
+	detectBreakout,
+};

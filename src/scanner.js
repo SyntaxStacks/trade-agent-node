@@ -1,26 +1,39 @@
 const { sendAlert } = require('./alerts');
-const { evaluateTradeRules } = require('./rules');
+const { evaluateTradeRules, detectBreakout } = require('./rules');
 const axios = require('axios');
+require('dotenv').config();
 
-async function fetchPrice(symbol) {
+async function fetchPriceData(symbol) {
   const response = await axios.get(`https://www.alphavantage.co/query`, {
     params: {
       function: 'TIME_SERIES_INTRADAY',
       symbol,
       interval: '5min',
-      apikey: 'demo' // Replace with real key later
+      apikey: process.env.ALPHA_VANTAGE_API_KEY
     }
   });
-  return response.data;
+
+  const timeseries = response.data['Time Series (5min)'];
+  const prices = Object.values(timeseries).map(bar => parseFloat(bar['4. close']));
+  return prices.reverse(); // Oldest to newest
 }
 
 async function scanMarket() {
   const symbols = ['SOXL'];
+
   for (let symbol of symbols) {
-    const data = await fetchPrice(symbol);
-    const tradeSignal = evaluateTradeRules(symbol, data);
-    if (tradeSignal) {
-      await sendAlert(tradeSignal);
+    try {
+      const prices = await fetchPriceData(symbol);
+      const tradeSignal = evaluateTradeRules(symbol, prices);
+      if (tradeSignal) {
+        await sendAlert(tradeSignal);
+      }
+			const breakoutSignal = detectBreakout(symbol, prices, 2);
+			if (breakoutSignal) {
+				await sendAlert(breakoutSignal);
+			}
+    } catch (err) {
+      console.error(`Error scanning ${symbol}:`, err.message);
     }
   }
 }
