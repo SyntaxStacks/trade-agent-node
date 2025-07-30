@@ -15,9 +15,9 @@ const headers = {
   'Content-Type': 'application/json',
 };
 
-/**
- * Insert a trade record into the 'trades' table where 'data' is jsonb.
- */
+/* =========================
+   TRADES (jsonb)
+   ========================= */
 async function logTradeToSupabase(tradeData) {
   try {
     const body = { data: tradeData };
@@ -28,12 +28,8 @@ async function logTradeToSupabase(tradeData) {
   }
 }
 
-/**
- * Close open trades for symbol+type by merging { status: 'CLOSED', note, closed_at }.
- */
 async function closeTrade(symbol, type, note = '') {
   try {
-    // 1) Get open rows
     const listUrl = new URL(`${SUPABASE_URL}/rest/v1/trades`);
     listUrl.searchParams.set('select', '*');
     listUrl.searchParams.set('order', 'created_at.desc');
@@ -43,26 +39,18 @@ async function closeTrade(symbol, type, note = '') {
 
     const res = await axios.get(listUrl.toString(), { headers });
     const rows = res.data || [];
-
     if (!rows.length) {
       console.log(`ℹ️ No OPEN trades found for ${symbol} (${type})`);
       return;
     }
 
-    // 2) Merge and PATCH each by id
     const closed_at = new Date().toISOString();
     for (const row of rows) {
       const id = row.id;
       const prev = row.data || {};
       const merged = { ...prev, status: 'CLOSED', note, closed_at };
-
-      await axios.patch(
-        `${SUPABASE_URL}/rest/v1/trades?id=eq.${id}`,
-        { data: merged },
-        { headers }
-      );
+      await axios.patch(`${SUPABASE_URL}/rest/v1/trades?id=eq.${id}`, { data: merged }, { headers });
     }
-
     console.log(`✅ Closed ${rows.length} trade(s) for ${symbol} (${type})`);
   } catch (err) {
     console.error('❌ Error closing trade:', err?.response?.data || err.message);
@@ -70,7 +58,6 @@ async function closeTrade(symbol, type, note = '') {
   }
 }
 
-/** Build a PostgREST URL with filters. */
 function buildUrl(table, filters = {}, extraParams = {}) {
   const base = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
   base.searchParams.set('select', '*');
@@ -80,7 +67,6 @@ function buildUrl(table, filters = {}, extraParams = {}) {
   return base.toString();
 }
 
-/** Trades fetchers */
 async function fetchTrades(filters = {}) {
   const url = buildUrl('trades', filters);
   const res = await axios.get(url, { headers });
@@ -106,77 +92,72 @@ function summarizeTrades(trades) {
 }
 
 /* =========================
-   WATCHLIST HELPERS (Supabase table: watchlist)
+   WATCHLIST
    ========================= */
-
-/** Crypto: add coin by CoinGecko id and symbol (uppercased). */
 async function addCryptoToWatchlist(coinId, symbol) {
   const body = { type: 'crypto', cid: coinId, symbol: symbol.toUpperCase() };
-  // Use upsert via unique index; PostgREST needs Prefer header & on conflict
-  try {
-    await axios.post(`${SUPABASE_URL}/rest/v1/watchlist`, body, {
-      headers: {
-        ...headers,
-        Prefer: 'resolution=merge-duplicates',
-      },
-    });
-  } catch (err) {
-    // If conflict handling isn’t available, we can fetch-and-check before insert.
-    if (err?.response?.status !== 409) throw err;
-  }
+  await axios.post(`${SUPABASE_URL}/rest/v1/watchlist`, body, {
+    headers: { ...headers, Prefer: 'resolution=merge-duplicates' },
+  });
 }
 
-/** Crypto: remove by CoinGecko id */
 async function removeCryptoFromWatchlist(coinId) {
-  const url = buildUrl('watchlist', {
-    type: 'eq.crypto',
-    cid: `eq.${coinId}`,
-  });
-  const res = await axios.delete(url, { headers });
-  // PostgREST returns deleted rows if Prefer: return=representation; keep simple here
-  // If not returning, we can re-fetch count. For simplicity, try to fetch after delete:
-  const verify = await listCryptoWatchlist();
-  // Return diff isn't exact; return 1 as success indicator
+  const url = buildUrl('watchlist', { type: 'eq.crypto', cid: `eq.${coinId}` });
+  await axios.delete(url, { headers });
   return 1;
 }
 
-/** Crypto: list watchlist */
 async function listCryptoWatchlist() {
   const url = buildUrl('watchlist', { type: 'eq.crypto' });
   const res = await axios.get(url, { headers });
   return res.data || [];
 }
 
-/** Stocks: add symbol (uppercased) */
 async function addStockToWatchlist(symbol) {
   const body = { type: 'stock', cid: null, symbol: symbol.toUpperCase() };
-  try {
-    await axios.post(`${SUPABASE_URL}/rest/v1/watchlist`, body, {
-      headers: {
-        ...headers,
-        Prefer: 'resolution=merge-duplicates',
-      },
-    });
-  } catch (err) {
-    if (err?.response?.status !== 409) throw err;
-  }
+  await axios.post(`${SUPABASE_URL}/rest/v1/watchlist`, body, {
+    headers: { ...headers, Prefer: 'resolution=merge-duplicates' },
+  });
 }
 
-/** Stocks: remove symbol */
 async function removeStockFromWatchlist(symbol) {
-  const url = buildUrl('watchlist', {
-    type: 'eq.stock',
-    symbol: `eq.${symbol.toUpperCase()}`,
-  });
+  const url = buildUrl('watchlist', { type: 'eq.stock', symbol: `eq.${symbol.toUpperCase()}` });
   await axios.delete(url, { headers });
   return 1;
 }
 
-/** Stocks: list watchlist */
 async function listStockWatchlist() {
   const url = buildUrl('watchlist', { type: 'eq.stock' });
   const res = await axios.get(url, { headers });
   return res.data || [];
+}
+
+/* =========================
+   SETTINGS (key/value)
+   ========================= */
+async function setSetting(key, value) {
+  const body = { key, value };
+  // Upsert: requires Prefer header (merge-duplicates) with primary key on key
+  await axios.post(`${SUPABASE_URL}/rest/v1/settings`, body, {
+    headers: { ...headers, Prefer: 'resolution=merge-duplicates' },
+  });
+}
+
+async function getSetting(key) {
+  const url = buildUrl('settings', { key: `eq.${key}` });
+  const res = await axios.get(url, { headers });
+  const row = (res.data || [])[0];
+  return row ? row.value : null;
+}
+
+async function getAllSettings() {
+  const url = buildUrl('settings');
+  const res = await axios.get(url, { headers });
+  const out = {};
+  for (const row of res.data || []) {
+    out[row.key] = row.value;
+  }
+  return out;
 }
 
 module.exports = {
@@ -193,5 +174,9 @@ module.exports = {
   addStockToWatchlist,
   removeStockFromWatchlist,
   listStockWatchlist,
+  // settings
+  setSetting,
+  getSetting,
+  getAllSettings,
 };
 
